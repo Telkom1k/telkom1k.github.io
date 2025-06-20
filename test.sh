@@ -43,14 +43,22 @@ setup_keyboard() {
 # Verificar conexión a internet
 check_internet() {
     log "Verificando conexión a internet..."
-    if ! ping -c 1 8.8.8.8 &> /dev/null; then
+    MAX_RETRIES=5 # Número máximo de reintentos
+    RETRY_COUNT=0
+    while ! ping -c 1 8.8.8.8 &> /dev/null; do
+        if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+            error "No se pudo establecer conexión a internet después de $MAX_RETRIES reintentos. Abortando."
+        fi
         warning "No hay conexión a internet."
         echo "Por favor, conecta a una red WiFi usando 'iwctl' o conecta cable ethernet."
-        read -p "Presiona Enter cuando tengas conexión a internet..."
-        if ! ping -c 1 8.8.8.8 &> /dev/null; then
-            error "Aún no hay conexión a internet. Abortando."
+        read -p "Presiona Enter cuando tengas conexión a internet o 'q' para salir..." user_input
+        if [[ "$user_input" == "q" ]]; then
+            error "Instalación cancelada por el usuario."
         fi
-    fi
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        log "Reintentando conexión en 5 segundos... (Intento $RETRY_COUNT/$MAX_RETRIES)"
+        sleep 5
+    done
     log "Conexión a internet: OK"
 }
 
@@ -282,33 +290,44 @@ mount_filesystems() {
 
 # Instalar sistema base con kernel hardened
 install_base_system() {
-    log "Instalando sistema base con kernel hardened..."
+    log "Iniciando instalación de sistema base con kernel hardened..."
 
-    # Lista completa de paquetes necesarios
-    pacstrap -K /mnt \
-        base base-devel \
-        linux-hardened linux-hardened-headers \
-        linux-firmware \
-        intel-ucode \
-        lvm2 cryptsetup \
-        networkmanager \
-        sudo nano git \
-        efibootmgr systemd-boot \
-        tpm2-tools \
-        apparmor \
-        sway waybar wofi \
-        kitty firefox \
-        pipewire pipewire-pulse wireplumber \
-        brightnessctl \
-        grim slurp wl-clipboard \
-        thunar tumbler \
-        ttf-dejavu ttf-liberation noto-fonts \
-        reflector \
-        sbctl \
-        systemd-ukify
+    INSTALL_SUCCESS=false
+    while [ "$INSTALL_SUCCESS" == "false" ]; do
+        check_internet # Vuelve a verificar la conexión antes de cada intento de instalación
 
-    log "Sistema base instalado"
+        log "Intentando instalar paquetes..."
+        if pacstrap -K /mnt \
+            base base-devel \
+            linux-hardened linux-hardened-headers \
+            linux-firmware \
+            intel-ucode \
+            lvm2 cryptsetup \
+            networkmanager \
+            sudo nano git \
+            efibootmgr systemd-boot \
+            tpm2-tools \
+            apparmor \
+            sway waybar wofi \
+            kitty firefox \
+            pipewire pipewire-pulse wireplumber \
+            brightnessctl \
+            grim slurp wl-clipboard \
+            thunar tumbler \
+            ttf-dejavu ttf-liberation noto-fonts \
+            reflector \
+            sbctl \
+            systemd-ukify; then
+            INSTALL_SUCCESS=true
+            log "Sistema base instalado correctamente."
+        else
+            warning "Fallo al instalar paquetes. Posible problema de red o mirror. Reintentando..."
+            # Podrías agregar una pausa o lógica para reconfigurar mirrors aquí si lo consideras necesario.
+            sleep 10 # Espera antes de reintentar
+        fi
+    done
 }
+
 
 # Generar fstab
 generate_fstab() {
@@ -930,7 +949,7 @@ main() {
 
     check_uefi
     setup_keyboard
-    check_internet
+    check_internet # Primera verificación de internet
     sync_time
     setup_mirrors
     update_system
@@ -941,7 +960,10 @@ main() {
     setup_lvm
     format_partitions
     mount_filesystems
-    install_base_system
+    
+    # Bucle de reintento para la instalación de dependencias
+    install_base_system # Esta función ahora contiene el bucle de reintento
+
     generate_fstab
     configure_system
     setup_apparmor
