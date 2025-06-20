@@ -69,7 +69,6 @@ setup_mirrors() {
     reflector --country Spain,Germany,France,Italy,Netherlands \
         --age 24 \
         --protocol https \
-        --fastest 10 \
         --save /etc/pacman.d/mirrorlist
     log "Mirrors configurados correctamente"
 }
